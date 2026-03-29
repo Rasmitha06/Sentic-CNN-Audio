@@ -1,245 +1,186 @@
-
-from tkinter import messagebox
-from tkinter import *
-from tkinter import simpledialog
+from tkinter import messagebox, simpledialog, filedialog
 import tkinter
+from tkinter import *
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-from tkinter import simpledialog
-from tkinter import filedialog
 import os
-import cv2
-import numpy as np
-from keras.utils.np_utils import to_categorical
-from keras.layers import  MaxPooling2D
-from keras.layers import Dense, Dropout, Activation, Flatten
-from keras.layers import Convolution2D
-from keras.models import Sequential
-from keras.models import model_from_json
 import pickle
-from sklearn.model_selection import train_test_split
+
 import soundfile
 import librosa
 
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.layers import MaxPooling2D, Dense, Dropout, Activation, Flatten, Conv2D
+from tensorflow.keras.models import Sequential, model_from_json
+
 main = tkinter.Tk()
-main.title("EMOTION DETECTION USING SPEECH RECOGNITION") #designing main screen
+main.title("EMOTION DETECTION USING SPEECH RECOGNITION")
 main.geometry("1300x1200")
 
-global filename
-global X, Y
-global speech_X, speech_Y
-global speech_classifier
+filename = None
+X, Y = None, None
+speech_X, speech_Y = None, None
+speech_classifier = None
 
 speech_emotion = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fearful', 'disgust', 'surprised']
 
-def getID(name):
-    index = 0
-    for i in range(len(names)):
-        if names[i] == name:
-            index = i
-            break
-    return index        
-    
 
 def upload():
     global filename
     filename = filedialog.askdirectory(initialdir=".")
     text.delete('1.0', END)
-    text.insert(END,filename+" loaded\n");
-    
-    
-def processDataset():
-    text.delete('1.0', END)
-    global X, Y
-    global speech_X, speech_Y
-    '''
-    X = []
-    Y = []
-    for root, dirs, directory in os.walk(filename):
-        for j in range(len(directory)):
-            name = os.path.basename(root)
-            print(name+" "+root+"/"+directory[j])
-            if 'Thumbs.db' not in directory[j]:
-                img = cv2.imread(root+"/"+directory[j])
-                img = cv2.resize(img, (32,32))
-                im2arr = np.array(img)
-                im2arr = im2arr.reshape(32,32,3)
-                X.append(im2arr)
-                Y.append(getID(name))
-        
-    X = np.asarray(X)
-    Y = np.asarray(Y)
-    print(Y)
+    text.insert(END, filename + " loaded\n")
 
-    X = X.astype('float32')
-    X = X/255    
-    test = X[3]
-    test = cv2.resize(test,(400,400))
-    cv2.imshow("aa",test)
-    cv2.waitKey(0)
-    indices = np.arange(X.shape[0])
-    np.random.shuffle(indices)
-    X = X[indices]
-    Y = Y[indices]
-    Y = to_categorical(Y)
-    np.save('model/X.txt',X)
-    np.save('model/Y.txt',Y)
-    '''
-    X = np.load('model/X.txt.npy')
-    Y = np.load('model/Y.txt.npy')
-    speech_X = np.load('model/speechX.txt.npy')
-    speech_Y = np.load('model/speechY.txt.npy')
-    text.insert(END,"Total number of images found in dataset is  : "+str(len(X))+"\n")
-    text.insert(END,"Total number of speech emotion audio files found in dataset is  : "+str(speech_X.shape[0])+"\n")
-    text.insert(END,"Total speech emotion found in dataset is : "+str(speech_emotion)+"\n")
+
+def processDataset():
+    global X, Y, speech_X, speech_Y
+    text.delete('1.0', END)
+    try:
+        X = np.load('model/X.txt.npy')
+        Y = np.load('model/Y.txt.npy')
+        speech_X = np.load('model/speechX.txt.npy')
+        speech_Y = np.load('model/speechY.txt.npy')
+        text.insert(END, "Total number of images found in dataset: " + str(len(X)) + "\n")
+        text.insert(END, "Total number of speech emotion audio files: " + str(speech_X.shape[0]) + "\n")
+        text.insert(END, "Total speech emotions: " + str(speech_emotion) + "\n")
+    except FileNotFoundError as e:
+        text.insert(END, "Error loading dataset files: " + str(e) + "\n")
+
 
 def trainSpeechCNN():
-    global speech_classifier
+    global speech_classifier, speech_X, speech_Y
+    text.delete('1.0', END)
+
+    if speech_X is None or speech_Y is None:
+        text.insert(END, "Please preprocess the dataset first.\n")
+        return
+
     if os.path.exists('model/speechmodel.json'):
         with open('model/speechmodel.json', "r") as json_file:
             loaded_model_json = json_file.read()
-            speech_classifier = model_from_json(loaded_model_json)
-        json_file.close()    
-        speech_classifier.load_weights("model/speech_weights.h5")
-        speech_classifier._make_predict_function()                  
+        speech_classifier = model_from_json(loaded_model_json)
+        speech_classifier.load_weights("model/speech_weights.weights.h5")
+        text.insert(END, "Loaded existing model from disk.\n")
     else:
-        speech_classifier = Sequential()
-        speech_classifier.add(Convolution2D(32, 1, 1, input_shape = (speech_X.shape[1], speech_X.shape[2], speech_X.shape[3]), activation = 'relu'))
-        speech_classifier.add(MaxPooling2D(pool_size = (1, 1)))
-        speech_classifier.add(Convolution2D(32, 1, 1, activation = 'relu'))
-        speech_classifier.add(MaxPooling2D(pool_size = (1, 1)))
-        speech_classifier.add(Flatten())
-        speech_classifier.add(Dense(output_dim = 256, activation = 'relu'))
-        speech_classifier.add(Dense(output_dim = speech_Y.shape[1], activation = 'softmax'))
-        print(speech_classifier.summary())
-        speech_classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-        hist = speech_classifier.fit(speech_X, speech_Y, batch_size=16, epochs=10, shuffle=True, verbose=2)
-        speech_classifier.save_weights('model/speech_weights.h5')            
+        speech_classifier = Sequential([
+            Conv2D(32, (1, 1), input_shape=(speech_X.shape[1], speech_X.shape[2], speech_X.shape[3]), activation='relu'),
+            MaxPooling2D(pool_size=(1, 1)),
+            Conv2D(32, (1, 1), activation='relu'),
+            MaxPooling2D(pool_size=(1, 1)),
+            Flatten(),
+            Dense(units=256, activation='relu'),
+            Dense(units=speech_Y.shape[1], activation='softmax')
+        ])
+        speech_classifier.summary()
+        speech_classifier.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        hist = speech_classifier.fit(speech_X, speech_Y, batch_size=16, epochs=100, shuffle=True, verbose=2)
+
+        speech_classifier.save_weights('model/speech_weights.weights.h5')
         model_json = speech_classifier.to_json()
         with open("model/speechmodel.json", "w") as json_file:
             json_file.write(model_json)
-        json_file.close()    
-        f = open('model/speechhistory.pckl', 'wb')
-        pickle.dump(hist.history, f)
-        f.close()
-    f = open('model/speechhistory.pckl', 'rb')
-    data = pickle.load(f)
-    f.close()
+        with open('model/speechhistory.pckl', 'wb') as f:
+            pickle.dump(hist.history, f)
+
+    with open('model/speechhistory.pckl', 'rb') as f:
+        data = pickle.load(f)
+
     acc = data['accuracy']
-    accuracy = acc[99] * 100
-    text.insert(END,"CNN Speech Emotion Training Model Accuracy = "+str(accuracy)+"\n\n")
-
-
+    accuracy = acc[-1] * 100
+    text.insert(END, "CNN Speech Emotion Training Model Accuracy = {:.2f}%\n\n".format(accuracy))
 
 
 def extract_feature(file_name, mfcc, chroma, mel):
     with soundfile.SoundFile(file_name) as sound_file:
         X = sound_file.read(dtype="float32")
-        sample_rate=sound_file.samplerate
+        sample_rate = sound_file.samplerate
         if chroma:
-            stft=np.abs(librosa.stft(X))
-        result=np.array([])
+            stft = np.abs(librosa.stft(X))
+        result = np.array([])
         if mfcc:
-            mfccs=np.mean(librosa.feature.mfcc(y=X, sr=sample_rate, n_mfcc=40).T, axis=0)
-            result=np.hstack((result, mfccs))
+            mfccs = np.mean(librosa.feature.mfcc(y=X, sr=sample_rate, n_mfcc=40).T, axis=0)
+            result = np.hstack((result, mfccs))
         if chroma:
-            chroma=np.mean(librosa.feature.chroma_stft(S=stft, sr=sample_rate).T,axis=0)
-            result=np.hstack((result, chroma))
+            chroma_feat = np.mean(librosa.feature.chroma_stft(S=stft, sr=sample_rate).T, axis=0)
+            result = np.hstack((result, chroma_feat))
         if mel:
-            mel=np.mean(librosa.feature.melspectrogram(X, sr=sample_rate).T,axis=0)
-            result=np.hstack((result, mel))
-    sound_file.close()        
+            mel_feat = np.mean(librosa.feature.melspectrogram(y=X, sr=sample_rate).T, axis=0)
+            result = np.hstack((result, mel_feat))
     return result
+
 
 def predictSpeechExpression():
     global speech_classifier
-    filename = filedialog.askopenfilename(initialdir="testSpeech")
-    fname = os.path.basename(filename)
-    test = []
-    mfcc = extract_feature(filename, mfcc=True, chroma=True, mel=True)
-    test.append(mfcc)
-    test = np.asarray(test)
-    test = test.astype('float32')
-    test = test/255
+    if speech_classifier is None:
+        text.insert(END, "Please train the model first.\n")
+        return
 
-    test = test.reshape((test.shape[0],test.shape[1],1,1))
+    file_path = filedialog.askopenfilename(initialdir="testSpeech")
+    if not file_path:
+        return
+    fname = os.path.basename(file_path)
+    test = []
+    mfcc = extract_feature(file_path, mfcc=True, chroma=True, mel=True)
+    test.append(mfcc)
+    test = np.asarray(test).astype('float32') / 255
+    test = test.reshape((test.shape[0], test.shape[1], 1, 1))
+
     predict = speech_classifier.predict(test)
-    predict = np.argmax(predict)
-    print(predict)
-    emotion = speech_emotion[predict-1]
+    predict_index = np.argmax(predict)
+    emotion_index = max(0, min(predict_index, len(speech_emotion) - 1))
+    emotion = speech_emotion[emotion_index]
+
     text.delete('1.0', END)
-    text.insert(END,"Upload speech file : "+fname+" Emotion Recognized as : "+emotion+"\n") 
-    
+    text.insert(END, "Uploaded speech file: " + fname + "\nEmotion Recognized: " + emotion + "\n")
 
 
 def graph():
-    
-    f = open('model/speechhistory.pckl', 'rb')
-    cnn_data = pickle.load(f)
-    f.close()
+    if not os.path.exists('model/speechhistory.pckl'):
+        text.insert(END, "No training history found. Train the model first.\n")
+        return
+
+    with open('model/speechhistory.pckl', 'rb') as f:
+        cnn_data = pickle.load(f)
+
     speech_accuracy = cnn_data['accuracy']
     speech_loss = cnn_data['loss']
-    sa = []
-    sl = []
-    for i in range(90,100):
-        sa.append(speech_accuracy[i])
-        sl.append(speech_loss[i])
 
-    
-    plt.figure(figsize=(10,6))
+    plt.figure(figsize=(10, 6))
     plt.grid(True)
-    plt.xlabel('Iterations/Epoch')
-    plt.ylabel('Accuracy')
-    plt.plot(fa, 'ro-', color = 'green')
-    plt.plot(fl, 'ro-', color = 'orange')
-    plt.plot(sa, 'ro-', color = 'blue')
-    plt.plot(sl, 'ro-', color = 'red')
-    plt.legend(['Speech Emotion Accuracy','Speech Emotion Loss'], loc='upper left')
-    plt.title('CNN Speech Emotion Accuracy Comparison Graph')
+    plt.xlabel('Epoch')
+    plt.ylabel('Value')
+    plt.plot(speech_accuracy, 'o-', color='blue', label='Speech Emotion Accuracy')
+    plt.plot(speech_loss, 'o-', color='red', label='Speech Emotion Loss')
+    plt.legend(loc='upper left')
+    plt.title('CNN Speech Emotion Accuracy & Loss Graph')
+    plt.tight_layout()
     plt.show()
 
-def exit():
+
+def exit_app():
     main.destroy()
 
-font = ('times', 13, 'bold')
-title = Label(main, text='EMOTION DETECTION USING SPEECH RECOGNITION')
-title.config(bg='LightGoldenrod1', fg='medium orchid')  
-title.config(font=font)           
-title.config(height=3, width=120)       
-title.place(x=0,y=5)
 
+# --- UI Layout ---
+font = ('times', 13, 'bold')
 font1 = ('times', 12, 'bold')
-text=Text(main,height=20,width=100)
-scroll=Scrollbar(text)
+
+title = Label(main, text='EMOTION DETECTION USING SPEECH RECOGNITION')
+title.config(bg='LightGoldenrod1', fg='medium orchid', font=font, height=3, width=120)
+title.place(x=0, y=5)
+
+text = Text(main, height=20, width=100)
+scroll = Scrollbar(text)
 text.configure(yscrollcommand=scroll.set)
-text.place(x=480,y=100)
+text.place(x=480, y=100)
 text.config(font=font1)
 
-
-font1 = ('times', 12, 'bold')
-
-processButton = Button(main, text="Preprocess Dataset", command=processDataset)
-processButton.place(x=50,y=150)
-processButton.config(font=font1) 
-
-
-rnnButton = Button(main, text="Train Speech Emotion CNN Algorithm", command=trainSpeechCNN)
-rnnButton.place(x=50,y=250)
-rnnButton.config(font=font1) 
-
-graphButton = Button(main, text="Accuracy Comparison Graph", command=graph)
-graphButton.place(x=50,y=300)
-graphButton.config(font=font1)
-
-
-predictspeechButton = Button(main, text="Predict Speech Emotion", command=predictSpeechExpression)
-predictspeechButton.place(x=50,y=400)
-predictspeechButton.config(font=font1)
-
-exitButton = Button(main, text="Exit", command=exit)
-exitButton.place(x=50,y=450)
-exitButton.config(font=font1) 
+Button(main, text="Upload Speech Emotion Dataset",      command=upload,                 font=font1).place(x=50, y=100)
+Button(main, text="Preprocess Dataset",                 command=processDataset,         font=font1).place(x=50, y=150)
+Button(main, text="Train Speech Emotion CNN Algorithm", command=trainSpeechCNN,         font=font1).place(x=50, y=200)
+Button(main, text="Accuracy Comparison Graph",          command=graph,                  font=font1).place(x=50, y=250)
+Button(main, text="Predict Speech Emotion",             command=predictSpeechExpression, font=font1).place(x=50, y=300)
+Button(main, text="Exit",                               command=exit_app,               font=font1).place(x=50, y=350)
 
 main.config(bg='OliveDrab2')
 main.mainloop()
