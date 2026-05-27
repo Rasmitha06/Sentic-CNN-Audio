@@ -1,0 +1,29 @@
+# Python cache and build files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.env.*
+
+# Dataset downloads and extracted data
+SpeechEmotionDataset/
+SpeechEmotionDataset1/
+SpeechEmotionDataset2/
+
+# Saved model artifacts
+model/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
